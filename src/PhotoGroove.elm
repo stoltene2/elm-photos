@@ -6,6 +6,7 @@ import Html exposing (Html, button, div, h1, img, input, label, text)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import List
+import Random exposing (Generator)
 
 
 type alias Photo =
@@ -23,6 +24,7 @@ type Msg
     = ClickedPhoto String
     | ClickedSize ThumbnailSize
     | ClickedSurpriseMe
+    | GotRandomIndex Int
 
 
 type ThumbnailSize
@@ -61,6 +63,11 @@ getPhotoUrl n =
 
         Nothing ->
             ""
+
+
+randomPhotoIndex : Generator Int
+randomPhotoIndex =
+    Random.int 0 (Array.length photoArray - 1)
 
 
 view : Model -> Html Msg
@@ -122,23 +129,27 @@ sizeToString size =
             "large"
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         ClickedPhoto s ->
-            { model | selected = s }
+            ( { model | selected = s }, Cmd.none )
 
         ClickedSurpriseMe ->
-            { model | selected = "2.jpeg" }
+            ( model, Random.generate GotRandomIndex randomPhotoIndex )
 
         ClickedSize size ->
-            { model | chosenSize = size }
+            ( { model | chosenSize = size }, Cmd.none )
+
+        GotRandomIndex n ->
+            ( { model | selected = getPhotoUrl n }, Cmd.none )
 
 
 main : Program () Model Msg
 main =
-    Browser.sandbox
-        { init = initialModel
+    Browser.element
+        { init = \c -> ( initialModel, Cmd.none )
         , view = view
         , update = update
+        , subscriptions = \_ -> Sub.none
         }
