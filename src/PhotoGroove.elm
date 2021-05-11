@@ -4,12 +4,27 @@ import Browser
 import Html exposing (Html, button, div, h1, img, input, label, text)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
+import Http
+import Json.Decode as Decode exposing (Decoder)
 import List
 import Random
 
 
+
+-- [
+--   {
+--     "url": "1.jpeg",
+--     "size": 36,
+--     "title": "Beachside"
+--   }
+-- ]
+
+
 type alias Photo =
-    { url : String }
+    { url : String
+    , size : Int
+    , title : String
+    }
 
 
 type Status
@@ -29,6 +44,7 @@ type Msg
     | ClickedSize ThumbnailSize
     | ClickedSurpriseMe
     | GotRandomPhoto Photo
+    | GotPhotos (Result Http.Error (List Photo))
 
 
 type ThumbnailSize
@@ -37,22 +53,41 @@ type ThumbnailSize
     | Large
 
 
+emptyPhoto : Photo
+emptyPhoto =
+    { url = "", size = 0, title = "" }
+
+
 initialModel : Model
 initialModel =
     { chosenSize = Medium
-    , status =
-        Loaded
-            [ { url = "1.jpeg" }
-            , { url = "2.jpeg" }
-            , { url = "3.jpeg" }
-            ]
-            "1.jpeg"
+    , status = Loading
     }
 
 
 urlPrefix : String
 urlPrefix =
     "http://elm-in-action.com/"
+
+
+decodePhoto : Decoder Photo
+decodePhoto =
+    Decode.map3 Photo
+        (Decode.field "url" Decode.string)
+        (Decode.field "size" Decode.int)
+        (fieldDefault "" <| Decode.maybe (Decode.field "title" Decode.string))
+
+
+fieldDefault : val -> Decoder (Maybe val) -> Decoder val
+fieldDefault default =
+    Decode.map <|
+        \val ->
+            case val of
+                Nothing ->
+                    default
+
+                Just v ->
+                    v
 
 
 view : Model -> Html Msg
@@ -97,6 +132,7 @@ viewThumbnail selected t =
         [ src (urlPrefix ++ t.url)
         , classList [ ( "selected", t.url == selected ) ]
         , onClick (ClickedPhoto t.url)
+        , title (t.title ++ " [" ++ String.fromInt t.size ++ " KB]")
         ]
         []
 
@@ -148,9 +184,9 @@ update msg model =
         ClickedSurpriseMe ->
             case model.status of
                 Loaded (p :: ps) _ ->
-                    ( model
-                    , Random.generate GotRandomPhoto <| Random.uniform p ps
-                    )
+                    Random.uniform p ps
+                        |> Random.generate GotRandomPhoto
+                        |> Tuple.pair model
 
                 _ ->
                     ( model, Cmd.none )
@@ -165,11 +201,30 @@ update msg model =
             , Cmd.none
             )
 
+        GotPhotos (Ok photos) ->
+            case photos of
+                first :: _ ->
+                    ( { model | status = Loaded photos first.url }, Cmd.none )
+
+                [] ->
+                    ( { model | status = Errored "0 photos found" }, Cmd.none )
+
+        GotPhotos (Err _) ->
+            ( { model | status = Errored "oh boy" }, Cmd.none )
+
+
+initialCmd : Cmd Msg
+initialCmd =
+    Http.get
+        { url = "http://elm-in-action.com/photos/list.json"
+        , expect = Http.expectJson GotPhotos (Decode.list decodePhoto)
+        }
+
 
 main : Program () Model Msg
 main =
     Browser.element
-        { init = \_ -> ( initialModel, Cmd.none )
+        { init = \_ -> ( initialModel, initialCmd )
         , view = view
         , update = update
         , subscriptions = \_ -> Sub.none
