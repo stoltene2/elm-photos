@@ -1,7 +1,7 @@
-module PhotoGroove exposing (main)
+port module PhotoGroove exposing (main)
 
 import Browser
-import Html exposing (Html, button, div, h1, img, input, label, node, text)
+import Html exposing (Html, button, canvas, div, h1, img, input, label, node, text)
 import Html.Attributes as Attributes exposing (..)
 import Html.Events exposing (on, onClick)
 import Http
@@ -28,6 +28,12 @@ type alias Photo =
     }
 
 
+type alias FilterOptions =
+    { url : String
+    , filters : List { name : String, amount : Float }
+    }
+
+
 type Status
     = Loading
     | Loaded (List Photo) String
@@ -40,6 +46,7 @@ type alias Model =
     , hue : Int
     , ripple : Int
     , noise : Int
+    , activity : String
     }
 
 
@@ -52,6 +59,7 @@ type Msg
     | SlideHue Int
     | SlideRipple Int
     | SlideNoise Int
+    | OnActivity String
 
 
 type ThumbnailSize
@@ -67,12 +75,23 @@ initialModel =
     , hue = 5
     , ripple = 5
     , noise = 5
+    , activity = ""
     }
 
 
 urlPrefix : String
 urlPrefix =
     "http://elm-in-action.com/"
+
+
+port setFilters : FilterOptions -> Cmd msg
+
+
+
+--                 ^ One param          ^ type variable
+
+
+port setActivity : (String -> msg) -> Sub msg
 
 
 decodePhoto : Decoder Photo
@@ -135,6 +154,7 @@ viewLoaded photos selected model =
     , button
         [ onClick ClickedSurpriseMe ]
         [ text "Surprise me" ]
+    , div [ class "activity" ] [ text model.activity ]
     , div [ class "filters" ]
         [ viewFilter SlideHue "Hue" model.hue
         , viewFilter SlideRipple "Ripple" model.ripple
@@ -146,12 +166,7 @@ viewLoaded photos selected model =
         , style "float" "left"
         ]
         (List.map (viewThumbnail selected) photos)
-    , img
-        [ class "large"
-        , style "float" "right"
-        , src (urlPrefix ++ "large/" ++ selected)
-        ]
-        []
+    , canvas [ id "main-canvas", class "large" ] []
     ]
 
 
@@ -202,13 +217,31 @@ selectUrl url status =
             status
 
 
+applyFilters : Model -> ( Model, Cmd Msg )
+applyFilters model =
+    case model.status of
+        Loaded _ selectedUrl ->
+            let
+                url =
+                    urlPrefix ++ "large/" ++ selectedUrl
+
+                filters =
+                    [ { name = "Hue", amount = toFloat model.hue / 11 }
+                    , { name = "Ripple", amount = toFloat model.ripple / 11 }
+                    , { name = "Noise", amount = toFloat model.noise / 11 }
+                    ]
+            in
+            ( model, setFilters { url = url, filters = filters } )
+
+        _ ->
+            ( model, Cmd.none )
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         ClickedPhoto url ->
-            ( { model | status = selectUrl url model.status }
-            , Cmd.none
-            )
+            applyFilters { model | status = selectUrl url model.status }
 
         ClickedSurpriseMe ->
             case model.status of
@@ -226,14 +259,12 @@ update msg model =
             )
 
         GotRandomPhoto photo ->
-            ( { model | status = selectUrl photo.url model.status }
-            , Cmd.none
-            )
+            applyFilters { model | status = selectUrl photo.url model.status }
 
         GotPhotos (Ok photos) ->
             case photos of
                 first :: _ ->
-                    ( { model | status = Loaded photos first.url }, Cmd.none )
+                    applyFilters { model | status = Loaded photos first.url }
 
                 [] ->
                     ( { model | status = Errored "0 photos found" }, Cmd.none )
@@ -241,14 +272,17 @@ update msg model =
         GotPhotos (Err _) ->
             ( { model | status = Errored "oh boy" }, Cmd.none )
 
-        SlideHue n ->
-            ( { model | hue = n }, Cmd.none )
+        SlideHue hue ->
+            applyFilters { model | hue = hue }
 
-        SlideRipple n ->
-            ( { model | ripple = n }, Cmd.none )
+        SlideRipple ripple ->
+            applyFilters { model | ripple = ripple }
 
-        SlideNoise n ->
-            ( { model | noise = n }, Cmd.none )
+        SlideNoise noise ->
+            applyFilters { model | noise = noise }
+
+        OnActivity activity ->
+            ( { model | activity = activity }, Cmd.none )
 
 
 onSlide : (Int -> msg) -> Html.Attribute msg
@@ -266,11 +300,11 @@ initialCmd =
         }
 
 
-main : Program () Model Msg
+main : Program String Model Msg
 main =
     Browser.element
-        { init = \_ -> ( initialModel, initialCmd )
+        { init = \activity -> ( { initialModel | activity = "Pasta v" ++ activity }, initialCmd )
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = \_ -> setActivity OnActivity
         }
