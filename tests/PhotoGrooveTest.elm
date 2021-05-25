@@ -1,12 +1,13 @@
 module PhotoGrooveTest exposing (..)
 
 import Expect exposing (Expectation, equal)
-import Fuzz exposing (Fuzzer, int, list, string)
+import Fuzz exposing (Fuzzer, int, string)
 import Html.Attributes as Attr
 import Json.Decode exposing (decodeValue)
 import Json.Encode as Encode
-import PhotoGroove exposing (Photo, Status(..), decodePhoto, initialModel, urlPrefix)
+import PhotoGroove exposing (Msg(..), Photo, Status(..), decodePhoto, initialModel, urlPrefix, view)
 import Test exposing (..)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, tag)
 
@@ -42,16 +43,28 @@ thumbnailRendered url query =
         |> Query.count (Expect.atLeast 1)
 
 
+urlFuzzer : Fuzzer (List String)
+urlFuzzer =
+    Fuzz.intRange 1 5
+        |> Fuzz.map urlsFromCount
+
+
+urlsFromCount : Int -> List String
+urlsFromCount upper =
+    List.range 1 upper
+        |> List.map (\n -> String.fromInt n ++ ".jpg")
+
+
+photoFromUrl : String -> Photo
+photoFromUrl url =
+    { url = url, size = 0, title = "" }
+
+
 thumbnailsAllRender : Test
 thumbnailsAllRender =
-    fuzz (Fuzz.intRange 1 5) "All thumbnails render" <|
-        \urlCount ->
+    fuzz urlFuzzer "All thumbnails render" <|
+        \urls ->
             let
-                urls : List String
-                urls =
-                    List.range 1 urlCount
-                        |> List.map (\n -> String.fromInt n ++ ".jpg")
-
                 thumbnailChecks : List (Query.Single msg -> Expectation)
                 thumbnailChecks =
                     List.map thumbnailRendered urls
@@ -62,6 +75,27 @@ thumbnailsAllRender =
                 |> Expect.all thumbnailChecks
 
 
-photoFromUrl : String -> Photo
-photoFromUrl url =
-    { url = url, size = 0, title = "" }
+nonEmptyUrlList : String -> List String -> List String -> ( String, List String )
+nonEmptyUrlList name front back =
+    let
+        url =
+            name ++ ".png"
+    in
+    ( url, front ++ url :: back )
+
+
+clickThumbnail : Test
+clickThumbnail =
+    fuzz3 urlFuzzer string urlFuzzer "clicking a thumbnail selects it" <|
+        \urlsBefore urlToSelect urlsAfter ->
+            let
+                ( srcToClick, photos ) =
+                    nonEmptyUrlList urlToSelect urlsBefore urlsAfter
+                        |> Tuple.mapSecond (List.map photoFromUrl)
+            in
+            { initialModel | status = Loaded photos "" }
+                |> view
+                |> Query.fromHtml
+                |> Query.find [ tag "img", attribute (Attr.src (urlPrefix ++ srcToClick)) ]
+                |> Event.simulate Event.click
+                |> Event.expect (ClickedPhoto srcToClick)
