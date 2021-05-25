@@ -1,4 +1,4 @@
-port module PhotoGroove exposing (main)
+port module PhotoGroove exposing (Photo, Status(..), decodePhoto, initialModel, main, urlPrefix, view)
 
 import Browser
 import Html exposing (Html, button, canvas, div, h1, img, input, label, node, text)
@@ -9,16 +9,6 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode
 import List
 import Random
-
-
-
--- [
---   {
---     "url": "1.jpeg",
---     "size": 36,
---     "title": "Beachside"
---   }
--- ]
 
 
 type alias Photo =
@@ -99,7 +89,7 @@ decodePhoto =
     Decode.map3 Photo
         (Decode.field "url" Decode.string)
         (Decode.field "size" Decode.int)
-        (fieldDefault "" <| Decode.maybe (Decode.field "title" Decode.string))
+        (fieldDefault "(untitled)" <| Decode.maybe (Decode.field "title" Decode.string))
 
 
 fieldDefault : val -> Decoder (Maybe val) -> Decoder val
