@@ -2,7 +2,7 @@ module PhotoFolders exposing (main)
 
 import Browser
 import Dict exposing (Dict)
-import Html exposing (Html, div, h2, h3, img, span, text)
+import Html exposing (Html, div, h1, h2, h3, img, label, span, text)
 import Html.Attributes exposing (class, src)
 import Html.Events exposing (onClick)
 import Http
@@ -19,21 +19,31 @@ type alias Photo =
     }
 
 
-type alias Model =
-    { selectedPhotoUrl : Maybe String
-    , photos : Dict String Photo
-    }
-
-
 type Msg
     = GotInitialModel (Result Http.Error Model)
     | ClickedPhoto String
+
+
+type Folder
+    = Folder
+        { name : String
+        , photoUrls : List String
+        , subfolders : List Folder
+        }
+
+
+type alias Model =
+    { selectedPhotoUrl : Maybe String
+    , photos : Dict String Photo
+    , root : Folder
+    }
 
 
 initialModel : Model
 initialModel =
     { selectedPhotoUrl = Nothing
     , photos = Dict.empty
+    , root = Folder { name = "Loading...", photoUrls = [], subfolders = [] }
     }
 
 
@@ -54,7 +64,25 @@ view model =
                     text ""
     in
     div [ class "content" ]
-        [ div [ class "selected-photo" ] [ selectedPhoto ] ]
+        [ div [ class "folders" ]
+            [ h1 [] [ text "Folders" ]
+            , viewFolder model.root
+            ]
+        , div [ class "selected-photo" ] [ selectedPhoto ]
+        ]
+
+
+viewFolder : Folder -> Html Msg
+viewFolder (Folder folder) =
+    let
+        subfolders =
+            List.map viewFolder folder.subfolders
+    in
+    div
+        [ class "folder" ]
+        [ label [] [ text folder.name ]
+        , div [ class "subfolder" ] subfolders
+        ]
 
 
 viewSelectedPhoto : Photo -> Html Msg
@@ -98,8 +126,8 @@ subscriptions _ =
     Sub.none
 
 
-decodeModel : Decoder Model
-decodeModel =
+modelDecoder : Decoder Model
+modelDecoder =
     Decode.succeed
         { selectedPhotoUrl = Just "trevi"
         , photos =
@@ -126,6 +154,45 @@ decodeModel =
                     }
                   )
                 ]
+        , root =
+            Folder
+                { name = "Photos"
+                , photoUrls = []
+                , subfolders =
+                    [ Folder
+                        { name = "2016"
+                        , photoUrls = [ "trevi", "coli" ]
+                        , subfolders =
+                            [ Folder
+                                { name = "outdoors"
+                                , photoUrls = []
+                                , subfolders = []
+                                }
+                            , Folder
+                                { name = "indoors"
+                                , photoUrls = [ "fresco" ]
+                                , subfolders = []
+                                }
+                            ]
+                        }
+                    , Folder
+                        { name = "2017"
+                        , photoUrls = []
+                        , subfolders =
+                            [ Folder
+                                { name = "outdoors"
+                                , photoUrls = []
+                                , subfolders = []
+                                }
+                            , Folder
+                                { name = "indoors"
+                                , photoUrls = []
+                                , subfolders = []
+                                }
+                            ]
+                        }
+                    ]
+                }
         }
 
 
@@ -134,7 +201,7 @@ init _ =
     ( initialModel
     , Http.get
         { url = "http://elm-in-action.com/folders/list"
-        , expect = Http.expectJson GotInitialModel decodeModel
+        , expect = Http.expectJson GotInitialModel modelDecoder
         }
     )
 
