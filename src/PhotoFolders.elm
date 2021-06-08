@@ -1,4 +1,4 @@
-module PhotoFolders exposing (main)
+module PhotoFolders exposing (..)
 
 import Browser
 import Dict exposing (Dict)
@@ -22,6 +22,7 @@ type alias Photo =
 type Msg
     = GotInitialModel (Result Http.Error Model)
     | ClickedPhoto String
+    | ClickedFolder FolderPath
 
 
 type Folder
@@ -29,6 +30,7 @@ type Folder
         { name : String
         , photoUrls : List String
         , subfolders : List Folder
+        , expanded : Bool
         }
 
 
@@ -43,7 +45,7 @@ initialModel : Model
 initialModel =
     { selectedPhotoUrl = Nothing
     , photos = Dict.empty
-    , root = Folder { name = "Loading...", photoUrls = [], subfolders = [] }
+    , root = Folder { name = "Loading...", photoUrls = [], subfolders = [], expanded = False }
     }
 
 
@@ -66,23 +68,64 @@ view model =
     div [ class "content" ]
         [ div [ class "folders" ]
             [ h1 [] [ text "Folders" ]
-            , viewFolder model.root
+            , viewFolder End model.root
             ]
         , div [ class "selected-photo" ] [ selectedPhoto ]
         ]
 
 
-viewFolder : Folder -> Html Msg
-viewFolder (Folder folder) =
+viewPhoto : String -> Html Msg
+viewPhoto url =
+    div [ class "photo", onClick (ClickedPhoto url) ]
+        [ text url ]
+
+
+viewFolder : FolderPath -> Folder -> Html Msg
+viewFolder path (Folder folder) =
     let
-        subfolders =
-            List.map viewFolder folder.subfolders
+        viewSubfolder : Int -> Folder -> Html Msg
+        viewSubfolder index subfolder =
+            viewFolder (appendIndex index path) subfolder
+
+        folderLabel =
+            label [ onClick (ClickedFolder path) ] [ text folder.name ]
     in
-    div
-        [ class "folder" ]
-        [ label [] [ text folder.name ]
-        , div [ class "subfolder" ] subfolders
-        ]
+    if folder.expanded then
+        let
+            contents =
+                List.append
+                    (List.indexedMap viewSubfolder folder.subfolders)
+                    (List.map viewPhoto folder.photoUrls)
+        in
+        div [ class "folder expanded" ]
+            [ folderLabel
+            , div [ class "contents" ] contents
+            ]
+
+    else
+        div [ class "folder collapsed" ] [ folderLabel ]
+
+
+appendIndex : Int -> FolderPath -> FolderPath
+appendIndex index path =
+    case path of
+        End ->
+            SubFolder index End
+
+        SubFolder idx rest ->
+            SubFolder idx (appendIndex index rest)
+
+
+
+{- *
+   appendIndex End root
+
+   SubFolder 0 End
+   SubFolder 1 End
+
+
+   *
+-}
 
 
 viewSelectedPhoto : Photo -> Html Msg
@@ -108,6 +151,11 @@ viewRelatedPhoto url =
         []
 
 
+type FolderPath
+    = End
+    | SubFolder Int FolderPath
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -119,6 +167,32 @@ update msg model =
 
         ClickedPhoto url ->
             ( { model | selectedPhotoUrl = Just url }, Cmd.none )
+
+        ClickedFolder path ->
+            ( { model | root = toggleExpanded path model.root }, Cmd.none )
+
+
+toggleExpanded : FolderPath -> Folder -> Folder
+toggleExpanded path (Folder folder) =
+    case path of
+        End ->
+            Folder { folder | expanded = not folder.expanded }
+
+        SubFolder targetIndex remainingPath ->
+            let
+                subfolders : List Folder
+                subfolders =
+                    List.indexedMap transform folder.subfolders
+
+                transform : Int -> Folder -> Folder
+                transform i currentSubfolder =
+                    if i == targetIndex then
+                        toggleExpanded remainingPath currentSubfolder
+
+                    else
+                        currentSubfolder
+            in
+            Folder { folder | subfolders = subfolders }
 
 
 subscriptions : Model -> Sub Msg
@@ -158,19 +232,23 @@ modelDecoder =
             Folder
                 { name = "Photos"
                 , photoUrls = []
+                , expanded = True
                 , subfolders =
                     [ Folder
                         { name = "2016"
                         , photoUrls = [ "trevi", "coli" ]
+                        , expanded = True
                         , subfolders =
                             [ Folder
                                 { name = "outdoors"
                                 , photoUrls = []
+                                , expanded = True
                                 , subfolders = []
                                 }
                             , Folder
                                 { name = "indoors"
                                 , photoUrls = [ "fresco" ]
+                                , expanded = True
                                 , subfolders = []
                                 }
                             ]
@@ -178,15 +256,18 @@ modelDecoder =
                     , Folder
                         { name = "2017"
                         , photoUrls = []
+                        , expanded = True
                         , subfolders =
                             [ Folder
                                 { name = "outdoors"
                                 , photoUrls = []
+                                , expanded = True
                                 , subfolders = []
                                 }
                             , Folder
                                 { name = "indoors"
                                 , photoUrls = []
+                                , expanded = True
                                 , subfolders = []
                                 }
                             ]
